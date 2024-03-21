@@ -98,10 +98,23 @@ COMMIT"
 
 MANGLE_RULES="*mangle
 -A FORWARD --match policy --pol ipsec --dir in -s 10.10.10.0/24 -o eth0 -p tcp -m tcp --tcp-flags SYN,RST SYN -m tcpmss --mss 1361:1536 -j TCPMSS --set-mss 1360
-COMMIT"
+COMMIT
+
+"
 
 # Insert NAT and mangle rules before the first occurrence of *filter in before.rules
 awk -v nat="$NAT_RULES" -v mangle="$MANGLE_RULES" '/\*filter/ && !modif { print nat; print mangle; modif=1 } {print}' /etc/ufw/before.rules.backup > /etc/ufw/before.rules
+
+# Append ESP handling rules after *filter section
+ESP_RULES="
+-A ufw-before-forward --match policy --pol ipsec --dir in --proto esp -s 10.10.10.0/24 -j ACCEPT
+-A ufw-before-forward --match policy --pol ipsec --dir out --proto esp -d 10.10.10.0/24 -j ACCEPT
+
+"
+
+# Use awk to insert ESP rules after the *filter section, making sure it's done in the updated file
+awk -v esp="$ESP_RULES" '/^COMMIT/ && !done {print esp; done=1} {print}' /etc/ufw/before.rules > /etc/ufw/before.rules.tmp && mv /etc/ufw/before.rules.tmp /etc/ufw/before.rules
+
 
 # Enable IP forwarding and disable ICMP redirects
 sed -i '/^#net\/ipv4\/ip_forward=1/s/^#//' /etc/ufw/sysctl.conf
