@@ -87,33 +87,25 @@ yes | ufw allow OpenSSH
 yes | ufw enable
 yes | ufw allow 500,4500/udp
 
-# First, backup the original before.rules file
-cp /etc/ufw/before.rules /etc/ufw/before.rules.backup
+# Append new rules to /etc/ufw/before.rules or insert before the *filter section
 
-# Prepare the new sections to be added
-NAT_RULES="*nat
--A POSTROUTING -s 10.10.10.0/24 -o eth0 -m policy --pol ipsec --dir out -j ACCEPT
--A POSTROUTING -s 10.10.10.0/24 -o eth0 -j MASQUERADE
-COMMIT"
+# Check if the NAT section already exists and insert it if not
+if ! grep -q "*nat" /etc/ufw/before.rules; then
+    # Inserting NAT rules before the *filter section
+    sed -i '/\*filter/i *nat\n-A POSTROUTING -s 10.10.10.0/24 -o eth0 -m policy --pol ipsec --dir out -j ACCEPT\n-A POSTROUTING -s 10.10.10.0/24 -o eth0 -j MASQUERADE\nCOMMIT\n' /etc/ufw/before.rules
+fi
 
-MANGLE_RULES="*mangle
--A FORWARD --match policy --pol ipsec --dir in -s 10.10.10.0/24 -o eth0 -p tcp -m tcp --tcp-flags SYN,RST SYN -m tcpmss --mss 1361:1536 -j TCPMSS --set-mss 1360
-COMMIT
+# Check if the mangle section already exists and insert it if not
+if ! grep -q "*mangle" /etc/ufw/before.rules; then
+    # Inserting mangle rules before the *filter section
+    sed -i '/\*filter/i *mangle\n-A FORWARD --match policy --pol ipsec --dir in -s 10.10.10.0/24 -o eth0 -p tcp -m tcp --tcp-flags SYN,RST SYN -m tcpmss --mss 1361:1536 -j TCPMSS --set-mss 1360\nCOMMIT\n' /etc/ufw/before.rules
+fi
 
-"
+# Add or update IPsec policy matching rules in the *filter section
+# This assumes that specific rules need to be updated or are unique enough not to be duplicated accidentally.
+sed -i '/:ufw-not-local - \[0:0\]/a -A ufw-before-forward --match policy --pol ipsec --dir in --proto esp -s 10.10.10.0/24 -j ACCEPT\n-A ufw-before-forward --match policy --pol ipsec --dir out --proto esp -d 10.10.10.0/24 -j ACCEPT' /etc/ufw/before.rules
 
-# Insert NAT and mangle rules before the first occurrence of *filter in before.rules
-awk -v nat="$NAT_RULES" -v mangle="$MANGLE_RULES" '/\*filter/ && !modif { print nat; print mangle; modif=1 } {print}' /etc/ufw/before.rules.backup > /etc/ufw/before.rules
-
-# Append ESP handling rules after *filter section
-ESP_RULES="
--A ufw-before-forward --match policy --pol ipsec --dir in --proto esp -s 10.10.10.0/24 -j ACCEPT
--A ufw-before-forward --match policy --pol ipsec --dir out --proto esp -d 10.10.10.0/24 -j ACCEPT
-
-"
-
-# Use awk to insert ESP rules after the *filter section, making sure it's done in the updated file
-awk -v esp="$ESP_RULES" '/^COMMIT/ && !done {print esp; done=1} {print}' /etc/ufw/before.rules > /etc/ufw/before.rules.tmp && mv /etc/ufw/before.rules.tmp /etc/ufw/before.rules
+echo "Updated /etc/ufw/before.rules with custom NAT, mangle, and IPsec policy matching rules."
 
 
 # Enable IP forwarding and disable ICMP redirects
