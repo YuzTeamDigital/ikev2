@@ -1,12 +1,16 @@
 #!/bin/bash
 
-# Check if a server name is provided
-if [ "$#" -ne 1 ]; then
-    echo "Usage: $0 <server-name>"
+# Prompt for server domain, username, and password
+read -p "Enter server domain: " SERVER_DOMAIN
+read -p "Enter VPN username: " VPN_USER
+read -s -p "Enter VPN password: " VPN_PASS
+echo
+
+# Validate input
+if [ -z "$SERVER_DOMAIN" ] || [ -z "$VPN_USER" ] || [ -z "$VPN_PASS" ]; then
+    echo "Server domain, username, and password are required."
     exit 1
 fi
-
-SERVER_NAME=$1
 
 # Install StrongSwan and related packages
 apt update
@@ -22,7 +26,13 @@ pki --self --ca --lifetime 3650 --in ~/pki/private/ca-key.pem --type rsa --dn "C
 
 # Generate server key and certificate
 pki --gen --type rsa --size 4096 --outform pem > ~/pki/private/server-key.pem
-pki --pub --in ~/pki/private/server-key.pem --type rsa | pki --issue --lifetime 1825 --cacert ~/pki/cacerts/ca-cert.pem --cakey ~/pki/private/ca-key.pem --dn "CN=$SERVER_NAME" --san "$SERVER_NAME" --flag serverAuth --flag ikeIntermediate --outform pem > ~/pki/certs/server-cert.pem
+pki --pub --in ~/pki/private/server-key.pem --type rsa \
+    | pki --issue --lifetime 1825 \
+    --cacert ~/pki/cacerts/ca-cert.pem \
+    --cakey ~/pki/private/ca-key.pem \
+    --dn "CN=$SERVER_DOMAIN" --san "$SERVER_DOMAIN" \
+    --flag serverAuth --flag ikeIntermediate --outform pem \
+    > ~/pki/certs/server-cert.pem
 
 # Copy certificates to the ipsec directory
 cp -r ~/pki/* /etc/ipsec.d/
@@ -48,7 +58,7 @@ conn ikev2-vpn
     dpddelay=300s
     rekey=no
     left=%any
-    leftid=@$SERVER_NAME
+    leftid=@$SERVER_DOMAIN
     leftcert=server-cert.pem
     leftsendcert=always
     leftsubnet=0.0.0.0/0
@@ -63,11 +73,10 @@ conn ikev2-vpn
     esp=aes256-sha256!
 EOF
 
-# Create new ipsec.secrets
+# Create new ipsec.secrets with user and pass
 cat > /etc/ipsec.secrets <<EOF
 : RSA "server-key.pem"
-amir : EAP "AirEAthOMEnT"
-ehsan : EAP "AirEAthOMEnT"
+$VPN_USER : EAP "$VPN_PASS"
 EOF
 
 # Restart StrongSwan
