@@ -87,8 +87,21 @@ yes | ufw allow OpenSSH
 yes | ufw enable
 yes | ufw allow 500,4500/udp
 
-# Update UFW before.rules
-sed -i '/^# End required lines/a *nat\n-A POSTROUTING -s 10.10.10.0/24 -o eth0 -m policy --pol ipsec --dir out -j ACCEPT\n-A POSTROUTING -s 10.10.10.0/24 -o eth0 -j MASQUERADE\nCOMMIT\n\n*mangle\n-A FORWARD --match policy --pol ipsec --dir in -s 10.10.10.0/24 -o eth0 -p tcp -m tcp --tcp-flags SYN,RST SYN -m tcpmss --mss 1361:1536 -j TCPMSS --set-mss 1360\nCOMMIT\n' /etc/ufw/before.rules
+# First, backup the original before.rules file
+cp /etc/ufw/before.rules /etc/ufw/before.rules.backup
+
+# Prepare the new sections to be added
+NAT_RULES="*nat
+-A POSTROUTING -s 10.10.10.0/24 -o eth0 -m policy --pol ipsec --dir out -j ACCEPT
+-A POSTROUTING -s 10.10.10.0/24 -o eth0 -j MASQUERADE
+COMMIT"
+
+MANGLE_RULES="*mangle
+-A FORWARD --match policy --pol ipsec --dir in -s 10.10.10.0/24 -o eth0 -p tcp -m tcp --tcp-flags SYN,RST SYN -m tcpmss --mss 1361:1536 -j TCPMSS --set-mss 1360
+COMMIT"
+
+# Insert NAT and mangle rules before the first occurrence of *filter in before.rules
+awk -v nat="$NAT_RULES" -v mangle="$MANGLE_RULES" '/\*filter/ && !modif { print nat; print mangle; modif=1 } {print}' /etc/ufw/before.rules.backup > /etc/ufw/before.rules
 
 # Enable IP forwarding and disable ICMP redirects
 sed -i '/^#net\/ipv4\/ip_forward=1/s/^#//' /etc/ufw/sysctl.conf
