@@ -12,9 +12,9 @@ if [ -z "$SERVER_DOMAIN" ] || [ -z "$VPN_USER" ] || [ -z "$VPN_PASS" ]; then
     exit 1
 fi
 
-# Install StrongSwan and related packages
+# Install StrongSwan, dnsmasq, and related packages
 apt update
-apt install strongswan strongswan-pki libcharon-extra-plugins libcharon-extauth-plugins libstrongswan-extra-plugins libtss2-tcti-tabrmd0 -y
+apt install strongswan strongswan-pki libcharon-extra-plugins libcharon-extauth-plugins libstrongswan-extra-plugins libtss2-tcti-tabrmd0 dnsmasq jq -y
 
 # Create PKI directory and set permissions
 mkdir -p ~/pki/{cacerts,certs,private}
@@ -66,7 +66,7 @@ conn ikev2-vpn
     rightid=%any
     rightauth=eap-mschapv2
     rightsourceip=10.10.10.0/24
-    rightdns=8.8.8.8,8.8.4.4
+    rightdns=127.0.0.1
     rightsendcert=never
     eap_identity=%identity
     ike=aes256-sha256-modp2048!
@@ -129,3 +129,15 @@ yes | ufw disable
 yes | ufw enable
 
 echo "VPN setup completed."
+
+# Setup dnsmasq for domain blocking
+JSON_FILE="blocklist.json"
+DNSMASQ_CONF="/etc/dnsmasq.d/blocked-domains.conf"
+
+jq -r '.blocked_domains[]' "$JSON_FILE" | while read -r DOMAIN; do
+    echo "address=/$DOMAIN/" >> "$DNSMASQ_CONF"
+done
+
+systemctl restart dnsmasq
+
+echo "dnsmasq configured to block domains and restarted."
