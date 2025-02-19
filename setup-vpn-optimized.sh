@@ -59,12 +59,12 @@ DEBIAN_FRONTEND=noninteractive apt-get install -y \
 ###############################################################################
 # 4. Configure UFW for SSH, IPsec, and Let’s Encrypt HTTP
 ###############################################################################
-yes | ufw allow OpenSSH
-yes | ufw allow 500/udp
-yes | ufw allow 4500/udp
-yes | ufw allow 80/tcp     # Needed for Let’s Encrypt standalone HTTP validation
+ufw allow OpenSSH || echo "Warning: OpenSSH rule may already exist, skipping..."
+ufw allow 500/udp   || echo "Warning: Port 500/udp rule may already exist, skipping..."
+ufw allow 4500/udp  || echo "Warning: Port 4500/udp rule may already exist, skipping..."
+ufw allow 80/tcp    || echo "Warning: Port 80/tcp rule may already exist, skipping..."
 
-# Enable UFW if not already
+# Enable UFW if not already (ufw enable prompts for confirmation)
 yes | ufw enable
 
 ###############################################################################
