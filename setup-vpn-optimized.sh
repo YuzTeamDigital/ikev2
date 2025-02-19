@@ -10,7 +10,7 @@
 #      VPN username, and VPN password.
 #
 # KEY POINTS:
-#   - Uses Let’s Encrypt for a trusted, signed certificate (2048-bit RSA by default).
+#   - Forces Let’s Encrypt to issue a 2048-bit RSA certificate (avoiding ECDSA).
 #   - Opens port 80 for HTTP validation (standalone mode).
 #   - Sets up IPsec with EAP-MSCHAPv2 authentication.
 #   - Configures UFW to allow necessary ports (SSH, 500/udp, 4500/udp).
@@ -68,22 +68,23 @@ ufw allow 80/tcp    || echo "Warning: Port 80/tcp rule may already exist, skippi
 yes | ufw enable
 
 ###############################################################################
-# 5. Obtain Let’s Encrypt certificate
+# 5. Obtain Let’s Encrypt certificate (force RSA 2048-bit)
 ###############################################################################
-# Stop any service possibly bound to port 80 if needed; in many cases you can
-# use --standalone without stopping anything if port 80 is free.
-# You could also integrate with an existing web server using --nginx or --apache.
+# Stop any service possibly bound to port 80 if needed. This uses standalone mode,
+# so port 80 must be free. If you run a web server, you could use --nginx or --apache.
 certbot certonly \
   --standalone \
   --non-interactive \
   --agree-tos \
   --preferred-challenges http \
+  --key-type rsa \
+  --rsa-key-size 2048 \
   -m "$LE_EMAIL" \
   -d "$SERVER_DOMAIN"
 
 # Let’s Encrypt stores certificates in /etc/letsencrypt/live/<domain>/
 # fullchain.pem: the certificate + intermediate chain
-# privkey.pem:   the private key
+# privkey.pem:   the RSA private key (2048-bit, forced by the flags above)
 
 ###############################################################################
 # 6. Configure IPsec
@@ -96,7 +97,7 @@ if [[ -f /etc/ipsec.secrets ]]; then
     cp /etc/ipsec.secrets "/etc/ipsec.secrets.$(date +%F-%T).bak"
 fi
 
-# Create new ipsec.conf
+# Create new ipsec.conf with leftauth=pubkey
 cat > /etc/ipsec.conf <<EOF
 config setup
     charondebug="ike 1, knl 1, cfg 0"
@@ -116,6 +117,7 @@ conn ikev2-vpn
     # Server side
     left=%any
     leftid=@${SERVER_DOMAIN}
+    leftauth=pubkey
     leftcert=/etc/letsencrypt/live/${SERVER_DOMAIN}/fullchain.pem
     leftsendcert=always
     leftsubnet=0.0.0.0/0
@@ -134,8 +136,7 @@ conn ikev2-vpn
     esp=aes256-sha256!
 EOF
 
-# Create new ipsec.secrets
-# We'll reference Let’s Encrypt's private key and set EAP credentials
+# Create new ipsec.secrets: reference the RSA key and set EAP credentials
 cat > /etc/ipsec.secrets <<EOF
 : RSA /etc/letsencrypt/live/${SERVER_DOMAIN}/privkey.pem
 ${VPN_USER} : EAP "${VPN_PASS}"
@@ -218,8 +219,10 @@ echo "Domain: ${SERVER_DOMAIN}"
 echo "Certificate: /etc/letsencrypt/live/${SERVER_DOMAIN}/fullchain.pem"
 echo "Private Key: /etc/letsencrypt/live/${SERVER_DOMAIN}/privkey.pem"
 echo "User: ${VPN_USER}"
-echo "Port 80 has been opened for Let’s Encrypt certificate renewal."
-echo "======================================================================="
+echo
+echo "IKEv2/EAP-MSCHAPv2 config with RSA 2048-bit certificate is ready."
+echo "-----------------------------------------------------------------------"
+echo "Ports opened: 80/tcp (renewal), 500/udp (IKE), 4500/udp (IPsec NAT-T)."
 echo "Important: Let’s Encrypt certificates expire in 90 days."
 echo "Certbot is installed and will auto-renew. Ensure port 80 remains open."
 echo "======================================================================="
