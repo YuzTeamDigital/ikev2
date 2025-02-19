@@ -19,6 +19,15 @@
 
 set -euo pipefail
 
+# Trap function to catch errors and print the error message with line number and command.
+error_exit() {
+    local lineno="$1"
+    local cmd="$2"
+    echo "Error on line ${lineno}: Command '${cmd}' failed." >&2
+    exit 1
+}
+trap 'error_exit ${LINENO} "$BASH_COMMAND"' ERR
+
 ###############################################################################
 # 1. Check if running as root
 ###############################################################################
